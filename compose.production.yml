@@ -1,6 +1,7 @@
 services:
   app:
     image: dvachini/caj-rawatan-chat:production
+    container_name: cajchat
     restart: unless-stopped
     env_file: .env
     environment:
@@ -18,14 +19,32 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=traefik_default
-      - traefik.http.routers.caj.entrypoints=websecure
-      - traefik.http.routers.caj.rule=Host(`caj.dvachini.cc`)
-      - traefik.http.routers.caj.tls=true
-      - traefik.http.routers.caj.tls.certresolver=myresolver
-      - traefik.http.services.caj.loadbalancer.server.port=5000
+      - traefik.http.routers.cajchat.rule=Host(`cajchat.klini.cc`)
+      - traefik.http.routers.cajchat.entrypoints=websecure
+      - traefik.http.routers.cajchat.tls=true
+      - traefik.http.routers.cajchat-http.rule=Host(`cajchat.klini.cc`)
+      - traefik.http.routers.cajchat-http.entrypoints=web
+      - traefik.http.routers.cajchat-http.middlewares=cajchat-https
+      - traefik.http.middlewares.cajchat-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.cajchat-https.redirectscheme.permanent=true
+      - traefik.http.routers.cajchat.tls.certresolver=myresolver
+      - traefik.http.routers.cajchat.middlewares=cajchat-security
+      - traefik.http.services.cajchat.loadbalancer.server.port=5000
+      - traefik.http.middlewares.cajchat-security.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.cajchat-security.headers.frameDeny=true
+      - traefik.http.middlewares.cajchat-security.headers.browserXssFilter=false
+      - traefik.http.middlewares.cajchat-security.headers.referrerPolicy=no-referrer
+      - traefik.http.middlewares.cajchat-security.headers.stsSeconds=63072000
+      - traefik.http.middlewares.cajchat-security.headers.stsIncludeSubdomains=true
+      - traefik.http.middlewares.cajchat-security.headers.stsPreload=true
+      - traefik.http.middlewares.cajchat-security.headers.permissionsPolicy=camera=(), microphone=(), geolocation=(), payment=(), usb=()
+      - traefik.http.middlewares.cajchat-security.headers.customResponseHeaders.Cross-Origin-Opener-Policy=same-origin
+      - traefik.http.middlewares.cajchat-security.headers.customResponseHeaders.Cross-Origin-Resource-Policy=same-origin
+      - traefik.http.middlewares.cajchat-security.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'
 
   postgres:
     image: postgres:17-alpine
+    container_name: cajchat_postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: caj_rawatan
@@ -39,7 +58,7 @@ services:
       test: ['CMD-SHELL', 'pg_isready -U caj_app -d caj_rawatan']
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
 
 networks:
   traefik:
