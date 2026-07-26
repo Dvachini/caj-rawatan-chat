@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 ADMIN_INVITE.txt
+*.tar.gz
 *.db
 *.db-shm
 *.db-wal
