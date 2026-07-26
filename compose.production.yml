@@ -1,0 +1,52 @@
+services:
+  app:
+    image: ghcr.io/dvachini/caj-rawatan-chat:production
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://caj_app:${POSTGRES_PASSWORD}@postgres:5432/caj_rawatan
+      CORPUS_PATH: /data/caj_rawatan
+      COOKIE_SECURE: 'true'
+    volumes:
+      - ./caj_rawatan:/data/caj_rawatan:ro
+    networks:
+      - traefik
+      - private
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik_default
+      - traefik.http.routers.caj.entrypoints=websecure
+      - traefik.http.routers.caj.rule=Host(`caj.dvachini.cc`)
+      - traefik.http.routers.caj.tls=true
+      - traefik.http.routers.caj.tls.certresolver=myresolver
+      - traefik.http.services.caj.loadbalancer.server.port=5000
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: caj_rawatan
+      POSTGRES_USER: caj_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - private
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U caj_app -d caj_rawatan']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+networks:
+  traefik:
+    external: true
+    name: traefik_default
+  private:
+    internal: true
+
+volumes:
+  postgres_data:

@@ -1,0 +1,8 @@
+node_modules
+.git
+.env
+ADMIN_INVITE.txt
+dist
+*.db
+*.db-shm
+*.db-wal

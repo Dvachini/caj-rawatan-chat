@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: caj_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: caj_rawatan
+      POSTGRES_USER: caj_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - 127.0.0.1:5433:5432
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U caj_app -d caj_rawatan']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - private
+
+networks:
+  private:
+
+volumes:
+  postgres_data:

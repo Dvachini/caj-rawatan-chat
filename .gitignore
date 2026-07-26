@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+ADMIN_INVITE.txt
+*.db
+*.db-shm
+*.db-wal
+.vscode/
