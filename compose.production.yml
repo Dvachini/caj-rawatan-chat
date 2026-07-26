@@ -1,6 +1,6 @@
 services:
   app:
-    image: caj-rawatan-chat:production
+    image: dvachini/caj-rawatan-chat:production
     restart: unless-stopped
     env_file: .env
     environment:
