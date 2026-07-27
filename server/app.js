@@ -16,11 +16,17 @@ async function* unavailableAnswer() {
 function streamHeaders(response) {
   response.status(200);
   response.set({
-    'content-type': 'application/x-ndjson; charset=utf-8',
+    'content-type': 'text/event-stream; charset=utf-8',
     'cache-control': 'no-store, no-transform',
+    connection: 'keep-alive',
     'x-accel-buffering': 'no',
   });
   response.flushHeaders();
+}
+
+function sendEvent(response, event) {
+  response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+  response.flush?.();
 }
 
 function addHistoryRoutes(app, auth, history) {
@@ -117,17 +123,14 @@ export function createApp({
         if (event.type === 'token') answer += event.value;
         if (event.type === 'done') sources = event.sources || [];
 
-        response.write(`${JSON.stringify(event)}\n`);
-        response.flush?.();
+        sendEvent(response, event);
       }
     } catch (error) {
       if (!response.destroyed) {
-        response.write(
-          `${JSON.stringify({
-            type: 'error',
-            value: 'Jawapan tidak dapat dijana.',
-          })}\n`,
-        );
+        sendEvent(response, {
+          type: 'error',
+          value: 'Jawapan tidak dapat dijana.',
+        });
         console.error('[chat]', error.message);
       }
     }

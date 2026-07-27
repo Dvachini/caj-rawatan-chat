@@ -56,10 +56,21 @@ test('chat streams grounded tokens and final citations', async (t) => {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ message: 'Berapa caj gigi palsu?' }),
   });
-  const lines = (await response.text()).trim().split('\n').map(JSON.parse);
+  const events = (await response.text())
+    .trim()
+    .split('\n\n')
+    .map((block) => {
+      const lines = block.split('\n');
+      return {
+        type: lines.find((line) => line.startsWith('event: ')).slice(7),
+        data: JSON.parse(
+          lines.find((line) => line.startsWith('data: ')).slice(6),
+        ),
+      };
+    });
 
   assert.equal(response.status, 200);
-  assert.match(response.headers.get('content-type'), /application\/x-ndjson/);
-  assert.deepEqual(lines.map(({ type }) => type), ['token', 'token', 'done']);
-  assert.equal(lines.at(-1).sources[0].label, '5.pdf');
+  assert.match(response.headers.get('content-type'), /text\/event-stream/);
+  assert.deepEqual(events.map(({ type }) => type), ['token', 'token', 'done']);
+  assert.equal(events.at(-1).data.sources[0].label, '5.pdf');
 });

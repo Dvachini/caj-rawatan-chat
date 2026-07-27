@@ -70,11 +70,15 @@ export default function useChat() {
     while (true) {
       const { done, value } = await reader.read();
       buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
+      const blocks = buffer.split('\n\n');
+      buffer = blocks.pop();
 
-      for (const line of lines) {
-        if (line) updateLastMessage(JSON.parse(line));
+      for (const block of blocks) {
+        const data = block
+          .split('\n')
+          .find((line) => line.startsWith('data: '));
+
+        if (data) updateLastMessage(JSON.parse(data.slice(6)));
       }
 
       if (done) return;
