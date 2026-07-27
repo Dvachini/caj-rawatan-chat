@@ -8,24 +8,30 @@ export function createAuthStore(db) {
   return {
     async register({ email, password, token }) {
       const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-      await db.query('BEGIN');
+
       try {
-        const invite = await db.query(
-          `UPDATE invites SET used_at = now()
-           WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
-           RETURNING role`,
-          [tokenHash],
-        );
-        if (!invite.rowCount) { await db.query('ROLLBACK'); return null; }
-        const passwordHash = await hashPassword(password);
-        const result = await db.query(
-          'INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3) RETURNING id, email, role',
-          [email, passwordHash, invite.rows[0].role],
-        );
-        await db.query('COMMIT');
-        return result.rows[0];
+        return await db.transaction(async (client) => {
+          const invite = await client.query(
+            `UPDATE invites
+             SET used_at = now()
+             WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+             RETURNING role`,
+            [tokenHash],
+          );
+
+          if (!invite.rowCount) return null;
+
+          const passwordHash = await hashPassword(password);
+          const result = await client.query(
+            `INSERT INTO users (email, password_hash, role)
+             VALUES ($1, $2, $3)
+             RETURNING id, email, role`,
+            [email, passwordHash, invite.rows[0].role],
+          );
+
+          return result.rows[0];
+        });
       } catch (error) {
-        await db.query('ROLLBACK');
         if (error.code === '23505') return null;
         throw error;
       }

@@ -33,29 +33,29 @@ export default function AuthPage({ onLogin }) {
   }
 
   return (
-    <main className='grid min-h-screen place-items-center bg-[#edf4f1] p-5'>
+    <main className='grid min-h-screen place-items-center p-5'>
       <form
-        className='grid w-full max-w-sm gap-4 rounded-2xl border border-[#d7e3de] bg-white p-8 shadow-xl shadow-[#275d4b]/5'
+        className='grid w-full max-w-sm gap-5 border-4 border-[#171717] bg-[#fffdf5] p-7 shadow-[8px_8px_0_#171717] sm:p-8'
         onSubmit={handleSubmit}
       >
-        <div className='grid h-11 w-11 place-items-center rounded-xl bg-[#176b57] font-bold text-white'>
+        <div className='grid h-14 w-14 -rotate-3 place-items-center border-3 border-[#171717] bg-[#ffd84d] text-lg font-black shadow-[4px_4px_0_#171717]'>
           CR
         </div>
         <div>
-          <h1 className='text-xl font-bold text-gray-900'>
+          <h1 className='text-3xl font-black uppercase tracking-tight text-[#171717]'>
             {isRegistering ? 'Daftar akaun' : 'Log masuk'}
           </h1>
-          <p className='mt-1 text-sm text-gray-500'>
+          <p className='mt-2 font-bold text-[#383838]'>
             {isRegistering
               ? 'Gunakan jemputan untuk cipta akaun.'
               : 'Akses rujukan caj rawatan.'}
           </p>
         </div>
 
-        <label className='grid gap-1 text-sm font-semibold text-gray-700'>
+        <label className='grid gap-2 text-sm font-black uppercase text-[#171717]'>
           E-mel
           <input
-            className='rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-[#176b57] focus:ring-2 focus:ring-[#79bba9]'
+            className='border-3 border-[#171717] bg-white px-3 py-3 font-bold outline-none focus:bg-[#fff7df]'
             name='email'
             type='email'
             autoComplete='email'
@@ -63,10 +63,10 @@ export default function AuthPage({ onLogin }) {
           />
         </label>
 
-        <label className='grid gap-1 text-sm font-semibold text-gray-700'>
+        <label className='grid gap-2 text-sm font-black uppercase text-[#171717]'>
           Kata laluan
           <input
-            className='rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-[#176b57] focus:ring-2 focus:ring-[#79bba9]'
+            className='border-3 border-[#171717] bg-white px-3 py-3 font-bold outline-none focus:bg-[#fff7df]'
             name='password'
             type='password'
             minLength='12'
@@ -75,10 +75,14 @@ export default function AuthPage({ onLogin }) {
           />
         </label>
 
-        {error && <p className='text-sm text-red-700'>{error}</p>}
+        {error && (
+          <p className='border-3 border-[#171717] bg-[#ff8fab] p-3 text-sm font-bold'>
+            {error}
+          </p>
+        )}
 
         <button
-          className='rounded-lg bg-[#176b57] px-4 py-3 font-bold text-white hover:bg-[#125544]'
+          className='border-3 border-[#171717] bg-[#78d6a3] px-4 py-3 font-black uppercase shadow-[4px_4px_0_#171717] transition-transform hover:-translate-y-0.5 hover:shadow-[6px_6px_0_#171717] active:translate-x-1 active:translate-y-1 active:shadow-none'
           type='submit'
         >
           {isRegistering ? 'Daftar' : 'Log masuk'}

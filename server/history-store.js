@@ -8,22 +8,26 @@ export function createHistoryStore(db) {
       return result.rows[0];
     },
     async save(conversationId, userId, question, answer, sources) {
-      const owner = await db.query('SELECT id FROM conversations WHERE id = $1 AND user_id = $2', [conversationId, userId]);
-      if (!owner.rowCount) return false;
-      await db.query('BEGIN');
-      try {
-        await db.query(
+      return db.transaction(async (client) => {
+        const conversation = await client.query(
+          'SELECT id FROM conversations WHERE id = $1 AND user_id = $2',
+          [conversationId, userId],
+        );
+
+        if (!conversation.rowCount) return false;
+
+        await client.query(
           `INSERT INTO messages (conversation_id, role, content, sources)
            VALUES ($1, 'user', $2, '[]'), ($1, 'assistant', $3, $4::jsonb)`,
           [conversationId, question, answer, JSON.stringify(sources)],
         );
-        await db.query('UPDATE conversations SET updated_at = now() WHERE id = $1', [conversationId]);
-        await db.query('COMMIT');
+        await client.query(
+          'UPDATE conversations SET updated_at = now() WHERE id = $1',
+          [conversationId],
+        );
+
         return true;
-      } catch (error) {
-        await db.query('ROLLBACK');
-        throw error;
-      }
+      });
     },
     async list(userId) {
       const result = await db.query(

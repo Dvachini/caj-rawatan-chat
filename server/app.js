@@ -6,20 +6,69 @@ import { addAuthRoutes, requireUser } from './auth-routes.js';
 import { createRateLimiter } from './rate-limit.js';
 
 async function* unavailableAnswer() {
-  yield { type: 'token', value: 'Sumber caj rawatan belum diindeks. Sistem tidak akan mereka jawapan atau kadar.' };
+  yield {
+    type: 'token',
+    value: 'Sumber caj rawatan belum diindeks. Sistem tidak akan mereka jawapan atau kadar.',
+  };
   yield { type: 'done', status: 'requires-index', sources: [] };
 }
 
-export function createApp({ ask = unavailableAnswer, auth, history, secureCookies = false } = {}) {
+function streamHeaders(response) {
+  response.status(200);
+  response.set({
+    'content-type': 'application/x-ndjson; charset=utf-8',
+    'cache-control': 'no-store, no-transform',
+    'x-accel-buffering': 'no',
+  });
+  response.flushHeaders();
+}
+
+function addHistoryRoutes(app, auth, history) {
+  app.get('/api/conversations', requireUser(auth), async (request, response) => {
+    const conversations = await history.list(request.user.id);
+    response.json({ conversations });
+  });
+
+  app.get(
+    '/api/conversations/:id',
+    requireUser(auth),
+    async (request, response) => {
+      const conversation = await history.get(
+        request.user.id,
+        request.params.id,
+      );
+
+      if (!conversation) {
+        return response.status(404).json({
+          error: 'Perbualan tidak ditemui.',
+        });
+      }
+
+      return response.json({ conversation });
+    },
+  );
+}
+
+export function createApp({
+  ask = unavailableAnswer,
+  auth,
+  history,
+  secureCookies = false,
+} = {}) {
   const app = express();
   const allowChat = createRateLimiter();
+  const protectChat = auth
+    ? requireUser(auth)
+    : (request, response, next) => next();
 
   app.disable('x-powered-by');
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: { upgradeInsecureRequests: null },
-    },
-  }));
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: { upgradeInsecureRequests: null },
+      },
+    }),
+  );
   app.use(compression());
   app.use(express.json({ limit: '16kb' }));
 
@@ -28,57 +77,69 @@ export function createApp({ ask = unavailableAnswer, auth, history, secureCookie
   });
 
   if (auth) addAuthRoutes(app, auth, { secureCookies });
+  if (auth && history) addHistoryRoutes(app, auth, history);
 
-  if (auth && history) {
-    app.get('/api/conversations', requireUser(auth), async (request, response) => {
-      response.json({ conversations: await history.list(request.user.id) });
-    });
-    app.get('/api/conversations/:id', requireUser(auth), async (request, response) => {
-      const conversation = await history.get(request.user.id, request.params.id);
-      return conversation ? response.json({ conversation }) : response.status(404).json({ error: 'Perbualan tidak ditemui.' });
-    });
-  }
-
-  app.post('/api/chat', ...(auth ? [requireUser(auth)] : []), async (request, response) => {
+  app.post('/api/chat', protectChat, async (request, response) => {
     const message = request.body?.message;
+    const validMessage =
+      typeof message === 'string' &&
+      message.trim() &&
+      message.length <= 2000;
 
-    if (typeof message !== 'string' || !message.trim() || message.length > 2000) {
-      return response.status(400).json({ error: 'Soalan mesti antara 1 hingga 2000 aksara.' });
+    if (!validMessage) {
+      return response.status(400).json({
+        error: 'Soalan mesti antara 1 hingga 2000 aksara.',
+      });
     }
-    if (auth && !allowChat(request.user.id)) return response.status(429).json({ error: 'Terlalu banyak soalan. Cuba lagi sebentar.' });
 
+    if (auth && !allowChat(request.user.id)) {
+      return response.status(429).json({
+        error: 'Terlalu banyak soalan. Cuba lagi sebentar.',
+      });
+    }
+
+    const question = message.trim();
     let conversationId = request.body?.conversationId;
+
     if (history && request.user && !conversationId) {
-      conversationId = (await history.create(request.user.id, message.trim())).id;
+      const conversation = await history.create(request.user.id, question);
+      conversationId = conversation.id;
     }
 
-    response.status(200);
-    response.set({
-      'content-type': 'application/x-ndjson; charset=utf-8',
-      'cache-control': 'no-store, no-transform',
-      'x-accel-buffering': 'no',
-    });
-    response.flushHeaders();
+    streamHeaders(response);
 
     let answer = '';
     let sources = [];
+
     try {
-      for await (const event of ask(message.trim(), { signal: request.signal })) {
+      for await (const event of ask(question, { signal: request.signal })) {
         if (response.destroyed) break;
         if (event.type === 'token') answer += event.value;
         if (event.type === 'done') sources = event.sources || [];
+
         response.write(`${JSON.stringify(event)}\n`);
         response.flush?.();
       }
     } catch (error) {
       if (!response.destroyed) {
-        response.write(`${JSON.stringify({ type: 'error', value: 'Jawapan tidak dapat dijana.' })}\n`);
+        response.write(
+          `${JSON.stringify({
+            type: 'error',
+            value: 'Jawapan tidak dapat dijana.',
+          })}\n`,
+        );
         console.error('[chat]', error.message);
       }
     }
 
     if (history && request.user && conversationId && answer) {
-      await history.save(conversationId, request.user.id, message.trim(), answer, sources);
+      await history.save(
+        conversationId,
+        request.user.id,
+        question,
+        answer,
+        sources,
+      );
     }
 
     return response.end();

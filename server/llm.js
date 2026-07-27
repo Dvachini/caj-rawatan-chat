@@ -1,7 +1,10 @@
 import path from 'node:path';
 
 import { createAnswerer } from './answer.js';
-import { containsSensitiveIdentifier, redactForExternalLlm } from './privacy.js';
+import {
+  containsSensitiveIdentifier,
+  redactForExternalLlm,
+} from './privacy.js';
 import { buildIndex, searchIndex } from './retrieval.js';
 
 const systemPrompt = `Anda pembantu caj rawatan KKM.
@@ -12,16 +15,55 @@ Bezakan dokumen rasmi daripada pengalaman kes terdahulu.
 Jangan sebut platform komunikasi, identiti individu, atau proses pemikiran.
 Untuk pergigian, jangan samakan prosedur dengan prosedur lain.`;
 
-function sourceFor({ source, sourceType, page }) {
+function publicSource({ source, sourceType, page }) {
   return {
-    label: sourceType === 'experiential' ? 'Pengalaman kes terdahulu' : path.basename(source),
+    label:
+      sourceType === 'experiential'
+        ? 'Pengalaman kes terdahulu'
+        : path.basename(source),
     sourceType,
     ...(page ? { page } : {}),
   };
 }
 
-async function* parseSse(response, maxBytes) {
-  if (!response.ok || !response.body) throw new Error(`LLM HTTP ${response.status}`);
+function uniqueSources(passages) {
+  const sources = passages.map(publicSource);
+  const unique = new Map(
+    sources.map((source) => [
+      `${source.label}:${source.page || ''}`,
+      source,
+    ]),
+  );
+  return [...unique.values()];
+}
+
+function evidenceText(passages) {
+  return passages
+    .map(({ text }, index) => `PETIKAN ${index + 1}:\n${text}`)
+    .join('\n\n');
+}
+
+function requestBody(model, question, passages) {
+  const safeQuestion = redactForExternalLlm(question);
+  const safeEvidence = redactForExternalLlm(evidenceText(passages));
+
+  return JSON.stringify({
+    model,
+    stream: true,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      {
+        role: 'user',
+        content: `SOALAN:\n${safeQuestion}\n\nJENIS SUMBER: Dokumen rasmi\n\n${safeEvidence}`,
+      },
+    ],
+  });
+}
+
+async function* streamContent(response, maxBytes) {
+  if (!response.ok || !response.body) {
+    throw new Error(`LLM HTTP ${response.status}`);
+  }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -35,95 +77,99 @@ async function* parseSse(response, maxBytes) {
     buffer = blocks.pop();
 
     for (const block of blocks) {
-      const line = block.split('\n').find((item) => item.startsWith('data: '));
+      const line = block
+        .split('\n')
+        .find((item) => item.startsWith('data: '));
+
       if (!line || line === 'data: [DONE]') continue;
-      const delta = JSON.parse(line.slice(6)).choices?.[0]?.delta;
-      const content = delta?.content;
+
+      const event = JSON.parse(line.slice(6));
+      const content = event.choices?.[0]?.delta?.content;
       if (!content) continue;
+
       bytes += Buffer.byteLength(content);
-      if (bytes > maxBytes) throw new Error('LLM output limit exceeded');
+      if (bytes > maxBytes) {
+        throw new Error('LLM output limit exceeded');
+      }
+
       yield content;
     }
 
-    if (done) break;
+    if (done) return;
   }
 }
 
-export function createLlmAnswerer(documents, {
-  baseUrl,
-  apiKey,
-  model,
-  fetchImpl = fetch,
-  timeoutMs = 90000,
-  maxBytes = 8192,
-} = {}) {
+async function* extractiveFallback(fallback, question) {
+  for await (const event of fallback(question)) {
+    if (event.type === 'done') {
+      yield { ...event, fallback: true };
+      continue;
+    }
+
+    yield event;
+  }
+}
+
+export function createLlmAnswerer(
+  documents,
+  {
+    baseUrl,
+    apiKey,
+    model,
+    fetchImpl = fetch,
+    timeoutMs = 90000,
+    maxBytes = 8192,
+  } = {},
+) {
   const index = buildIndex(documents);
   const fallback = createAnswerer(documents);
+  const apiUrl = `${baseUrl?.replace(/\/$/, '')}/chat/completions`;
 
-  return async function* ask(question) {
+  return async function* answerQuestion(question) {
     const passages = searchIndex(index, question, 3);
-    if (!passages.length || !baseUrl || !apiKey || !model) {
+    const canUseLlm =
+      passages.length &&
+      baseUrl &&
+      apiKey &&
+      model &&
+      passages[0].sourceType === 'official' &&
+      !containsSensitiveIdentifier(question);
+
+    if (!canUseLlm) {
       yield* fallback(question);
       return;
     }
 
-    const passage = passages[0];
-    if (passage.sourceType !== 'official') {
-      yield* fallback(question);
-      return;
-    }
-    if (containsSensitiveIdentifier(question)) {
-      yield* fallback(question);
-      return;
-    }
-    const safeQuestion = redactForExternalLlm(question);
-    const evidence = passages.map(({ text }, index) => `PETIKAN ${index + 1}:\n${text}`).join('\n\n');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    let emitted = false;
+    let hasContent = false;
 
     try {
-      const response = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      const response = await fetchImpl(apiUrl, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${apiKey}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify({
-          model,
-          stream: true,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            {
-              role: 'user',
-              content: `SOALAN:\n${safeQuestion}\n\nJENIS SUMBER: Dokumen rasmi\n\n${redactForExternalLlm(evidence)}`,
-            },
-          ],
-        }),
+        body: requestBody(model, question, passages),
         signal: controller.signal,
       });
 
-      for await (const value of parseSse(response, maxBytes)) {
-        emitted = true;
+      for await (const value of streamContent(response, maxBytes)) {
+        hasContent = true;
         yield { type: 'token', value };
       }
 
-      if (!emitted) throw new Error('LLM returned no final content');
-      const sources = [...new Map(passages.map((item) => {
-        const source = sourceFor(item);
-        return [`${source.label}:${source.page ?? ''}`, source];
-      })).values()];
+      if (!hasContent) throw new Error('LLM returned no final content');
+
       yield {
         type: 'done',
-        status: passage.sourceType,
-        sources,
+        status: 'official',
+        sources: uniqueSources(passages),
         model,
       };
     } catch {
-      const events = fallback(question);
-      for await (const event of events) {
-        yield event.type === 'done' ? { ...event, fallback: true } : event;
-      }
+      yield* extractiveFallback(fallback, question);
     } finally {
       clearTimeout(timeout);
     }

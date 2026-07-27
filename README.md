@@ -58,7 +58,8 @@ npm audit --audit-level=high
 ```text
 src/                  React UI
 server/app.js         HTTP API
-server/policy.js      Source authority policy
+server/answer.js      Source authority and safe fallback
+server/retrieval.js   Official-first evidence retrieval
 server/*.test.js      Node test runner tests
 server.js             Production entry point
 ```
