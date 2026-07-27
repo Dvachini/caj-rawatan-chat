@@ -16,7 +16,7 @@ Secure, source-grounded chatbot foundation for Malaysian treatment-fee reference
 - No fee invented outside retrieved evidence
 - Tests for retrieval, privacy, source policy, LLM filtering/fallback, and HTTP streaming
 
-Not implemented yet: PostgreSQL users/sessions, authentication, distributed rate limiting, or deployment. `mrld-gpt-5.6-sol` is configured; slow provider responses fall back safely to source excerpts.
+Not implemented yet: PostgreSQL users/sessions, authentication, distributed rate limiting, or deployment.
 
 ## Run
 
